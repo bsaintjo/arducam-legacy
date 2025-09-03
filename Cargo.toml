@@ -1,5 +1,5 @@
 [package]
-authors = ["Radosław Wolański <radekw8733@gmail.com"]
+authors = ["Radosław Wolański <radekw8733@gmail.com>", "Brandon Saint-John <branstj@gmail.com>"]
 license = "Apache-2.0"
 name = "arducam-legacy"
 description = "Driver for Arducam legacy cameras based on embedded-hal"
@@ -12,6 +12,3 @@ readme = "README.md"
 
 [dependencies]
 embedded-hal = "0.2.7"
-
-[build-dependencies]
-cc = "1.0.79"
