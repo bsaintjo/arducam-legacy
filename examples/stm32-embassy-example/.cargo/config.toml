@@ -1,0 +1,9 @@
+[target.thumbv6m-none-eabi]
+runner = "probe-rs run --chip stm32u083rc"
+rustflags = ["-C", "debuginfo=2", "-C", "strip=none"]
+
+[build]
+target = "thumbv6m-none-eabi"
+
+[env]
+DEFMT_LOG = "debug"
