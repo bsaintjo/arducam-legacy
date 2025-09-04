@@ -95,35 +95,40 @@ impl<I: I2c, S: SpiDevice> Arducam<I, S> {
 
     fn blocking_sensor_readreg8_8(&mut self, reg: u8, out: &mut [u8]) -> Result<(), ArducamError> {
         self.i2c
-            .write_read(OV2640_ADDR, &[reg & 0xFF], out)
+            .write_read(OV2640_ADDR, &[reg], out)
             .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
     fn blocking_sensor_writereg8_8(&mut self, reg: u8, data: u8) -> Result<(), ArducamError> {
         self.i2c
-            .write(OV2640_ADDR, &[reg & 0xFF, data & 0xFF])
+            .write(OV2640_ADDR, &[reg, data])
             .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
-    fn arduchip_write(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
+    // fn arduchip_write(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
+        // self.spi
+        //     .write(&[addr, data])
+        //     .map_err(|e| ArducamError::SpiError(e.kind()))
+    // }
+
+    // fn arduchip_read(&mut self, addr: u8) -> Result<u8, ArducamError> {
+    //     let mut value = [0u8; 1];
+    //     self.transaction(&mut [Operation::Write(&[addr; 1]), Operation::Read(&mut value)])?;
+    //     Ok(value[0])
+    // }
+
+    fn arduchip_write_reg(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
+        // self.arduchip_write(addr | 0x80, data)
         self.spi
-            // .transaction(&mut [Operation::Write(&[addr; 1]), Operation::Write(&[data; 1])])
-            .write(&[addr, data])
+            .write(&[addr | 0x80, data])
             .map_err(|e| ArducamError::SpiError(e.kind()))
     }
 
-    fn arduchip_read(&mut self, addr: u8) -> Result<u8, ArducamError> {
-        let mut value = [0u8; 1];
-        self.transaction(&mut [Operation::Write(&[addr; 1]), Operation::Read(&mut value)])?;
-        Ok(value[0])
-    }
-
-    fn arduchip_write_reg(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
-        self.arduchip_write(addr | 0x80, data)
-    }
-
     fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArducamError> {
-        self.arduchip_read(addr & 0x7F)
+        // self.arduchip_read(addr & 0x7F)
+        let mut value = [0u8; 1];
+        self.transaction(&mut [Operation::Write(&[addr & 0x7f]), Operation::Read(&mut value)])?;
+        Ok(value[0])
     }
 
     fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError> {
