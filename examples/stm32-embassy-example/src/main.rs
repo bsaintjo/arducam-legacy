@@ -4,8 +4,13 @@
 use arducam_legacy::{Arducam, Resolution};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_stm32::{i2c::I2c, spi::Spi};
-use embassy_time::Delay;
+use embassy_stm32::{
+    gpio::{Level, Output, Speed},
+    i2c::I2c,
+    spi::Spi,
+};
+use embassy_time::{Delay, Timer};
+use embedded_hal_bus::spi::ExclusiveDevice;
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -18,12 +23,14 @@ async fn main(_spawner: Spawner) {
     let sck = p.PA5;
     let miso = p.PA6;
     let mosi = p.PA7;
-    // let cs = p.PB6;
     let spi = Spi::new_blocking(p.SPI1, sck, mosi, miso, Default::default());
+    let cs = Output::new(p.PB6, Level::High, Speed::VeryHigh);
 
     let mut delay = Delay;
-    let mut arducam = Arducam::new_blocking(i2c, spi, Resolution::Res160x120);
-    arducam.init(&mut delay).unwrap();
+    let device = ExclusiveDevice::new(spi, cs, &mut delay).unwrap();
+
+    let mut arducam = Arducam::new_blocking(i2c, device, Resolution::Res160x120);
+    arducam.init().unwrap();
 
     let data = arducam.get_sensor_chipid().unwrap();
     info!("Whoami: 0x{:x}{:x}", data[0], data[1]);
@@ -33,4 +40,19 @@ async fn main(_spawner: Spawner) {
     } else {
         info!("Disconnected?");
     }
+
+    arducam.start_capture().unwrap();
+    info!("Capture started.");
+    while !arducam.is_capture_done().unwrap() {
+        // info!("Capture in progress...");
+        Timer::after_millis(50).await;
+    }
+
+    info!("Capture complete");
+    let length = arducam.get_fifo_length().unwrap();
+    info!("FIFO length: {}", length);
+    let mut image = [0u8; 8192];
+    arducam.read_captured_image(&mut image).unwrap();
+    info!("Image read!");
+    info!("First bytes {:02x}", image[..12]);
 }

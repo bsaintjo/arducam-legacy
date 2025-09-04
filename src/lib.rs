@@ -4,9 +4,10 @@
 #![no_std]
 #![no_main]
 
-use core::{slice::IterMut};
-
-use embedded_hal_1::{delay::DelayNs, i2c::I2c, spi::SpiBus};
+use embedded_hal_1::{
+    i2c::{self, Error as I2cError, I2c},
+    spi::{self, Error as SpiError, Operation, SpiDevice},
+};
 use registers::*;
 
 pub mod registers;
@@ -53,23 +54,15 @@ pub struct Arducam<I: I2c, S> {
     resolution: Resolution,
 }
 
-#[derive(Debug)]
-pub enum ArduCAMError {
-    I2cError,
-    SpiError,
+#[derive(thiserror::Error, Debug)]
+pub enum ArducamError {
+    #[error("I2C error: {0}")]
+    I2cError(i2c::ErrorKind),
+    #[error("SPI error: {0}")]
+    SpiError(spi::ErrorKind),
 }
 
-impl<I: I2c, S: embedded_hal_async::spi::SpiBus> Arducam<I, S> {
-    pub fn new(i2c: I, spi: S, resolution: Resolution) -> Self {
-        Self {
-            i2c,
-            spi,
-            resolution,
-        }
-    }
-}
-
-impl<I: I2c, S: SpiBus> Arducam<I, S> {
+impl<I: I2c, S: SpiDevice> Arducam<I, S> {
     pub fn new_blocking(i2c: I, spi: S, resolution: Resolution) -> Self {
         Self {
             i2c,
@@ -78,59 +71,47 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
         }
     }
 
-    fn sensor_readreg8_8(&mut self, reg: u8, out: &mut [u8]) -> Result<(), ArduCAMError> {
+    fn sensor_readreg8_8(&mut self, reg: u8, out: &mut [u8]) -> Result<(), ArducamError> {
         self.i2c
             .write_read(OV2640_ADDR, &[reg & 0xFF], out)
-            .map_err(|_| ArduCAMError::I2cError)
+            .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
-    fn sensor_writereg8_8(&mut self, reg: u8, data: u8) -> Result<(), ArduCAMError> {
+    fn sensor_writereg8_8(&mut self, reg: u8, data: u8) -> Result<(), ArducamError> {
         self.i2c
             .write(OV2640_ADDR, &[reg & 0xFF, data & 0xFF])
-            .map_err(|_| ArduCAMError::I2cError)
+            .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
-    fn arduchip_write(&mut self, addr: u8, data: u8) -> Result<(), ArduCAMError> {
-        // self.spi_cs.set_low().map_err(Error::Pin)?;
+    fn arduchip_write(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
         self.spi
-            .write(&[addr; 1])
-            .map_err(|_| ArduCAMError::SpiError)?;
-        self.spi
-            .write(&[data; 1])
-            .map_err(|_| ArduCAMError::SpiError)?;
-        // self.spi_cs.set_high().map_err(Error::Pin)?;
-        Ok(())
+            // .transaction(&mut [Operation::Write(&[addr; 1]), Operation::Write(&[data; 1])])
+            .write(&[addr, data])
+            .map_err(|e| ArducamError::SpiError(e.kind()))
     }
 
-    fn arduchip_read(&mut self, addr: u8) -> Result<u8, ArduCAMError> {
-        // self.spi_cs.set_low().map_err(Error::Pin)?;
-        self.spi
-            .write(&mut [addr; 1])
-            .map_err(|_| ArduCAMError::SpiError)?;
+    fn arduchip_read(&mut self, addr: u8) -> Result<u8, ArducamError> {
         let mut value = [0u8; 1];
-        self.spi
-            .read(&mut value)
-            .map_err(|_| ArduCAMError::SpiError)?;
-        // self.spi_cs.set_high().map_err(Error::Pin)?;
+        self.transaction(&mut [Operation::Write(&[addr; 1]), Operation::Read(&mut value)])?;
         Ok(value[0])
     }
 
-    fn arduchip_write_reg(&mut self, addr: u8, data: u8) -> Result<(), ArduCAMError> {
+    fn arduchip_write_reg(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
         self.arduchip_write(addr | 0x80, data)
     }
 
-    fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArduCAMError> {
+    fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArducamError> {
         self.arduchip_read(addr & 0x7F)
     }
 
-    fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArduCAMError> {
+    fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError> {
         for reg in regs {
             self.sensor_writereg8_8(reg[0], reg[1])?;
         }
         Ok(())
     }
 
-    fn send_resolution(&mut self) -> Result<(), ArduCAMError> {
+    fn send_resolution(&mut self) -> Result<(), ArducamError> {
         match self.resolution {
             Resolution::Res160x120 => self.sensor_writeregs8_8(&OV2640_160x120_JPEG),
             Resolution::Res1024x768 => self.sensor_writeregs8_8(&OV2640_1024x768_JPEG),
@@ -144,35 +125,41 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
         }
     }
 
-    fn flush_fifo(&mut self) -> Result<(), ArduCAMError> {
+    fn flush_fifo(&mut self) -> Result<(), ArducamError> {
         self.arduchip_write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK)
     }
 
-    fn start_fifo(&mut self) -> Result<(), ArduCAMError> {
+    fn start_fifo(&mut self) -> Result<(), ArducamError> {
         self.arduchip_write_reg(ARDUCHIP_FIFO, FIFO_START_MASK)
     }
 
-    fn set_fifo_burst(&mut self) -> Result<(), ArduCAMError> {
+    // fn set_fifo_burst(&mut self) -> Result<(), ArduCAMError> {
+    //     self.spi
+    //         .write(&[FIFO_BURST])
+    //         .map_err(|_| ArduCAMError::SpiError)
+    // }
+    fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), ArducamError> {
         self.spi
-            .write(&[FIFO_BURST])
-            .map_err(|_| ArduCAMError::SpiError)
+            .transaction(operations)
+            .map_err(|e| ArducamError::SpiError(e.kind()))
     }
 
     /// Initializes Arducam to resetted state
-    pub fn init<D>(&mut self, delay: &mut D) -> Result<(), ArduCAMError>
-    where
-        D: DelayNs,
-    {
+    pub fn init(&mut self) -> Result<(), ArducamError> {
         self.arduchip_write_reg(0x07, 0x80)?;
-        delay.delay_ms(100);
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])?;
         self.arduchip_write_reg(0x07, 0x00)?;
-        delay.delay_ms(100);
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])?;
+
         self.sensor_writereg8_8(0xFF, 0x01)?;
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])?;
+
         self.sensor_writereg8_8(0x12, 0x80)?;
-        delay.delay_ms(100);
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])?;
 
         self.sensor_writeregs8_8(&OV2640_JPEG_INIT)?;
         self.sensor_writeregs8_8(&OV2640_YUV422)?;
+        self.sensor_writeregs8_8(&OV2640_JPEG)?;
         self.sensor_writereg8_8(0xFF, 0x01)?;
         self.sensor_writereg8_8(0x15, 0x00)?;
         self.send_resolution()?;
@@ -181,14 +168,14 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
     }
 
     /// Sets camera resolution
-    pub fn set_resolution(&mut self, resolution: Resolution) -> Result<(), ArduCAMError> {
+    pub fn set_resolution(&mut self, resolution: Resolution) -> Result<(), ArducamError> {
         self.resolution = resolution;
         self.send_resolution()?;
         Ok(())
     }
 
     /// Checks if Arducam is still connected to SPI bus
-    pub fn is_connected(&mut self) -> Result<bool, ArduCAMError> {
+    pub fn is_connected(&mut self) -> Result<bool, ArducamError> {
         let test_value = 0x52;
         self.arduchip_write_reg(ARDUCHIP_TEST1, test_value)?;
         let result = self.arduchip_read_reg(ARDUCHIP_TEST1)?;
@@ -196,8 +183,8 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
         let valid_ov2640_chipid1 = [0x26, 0x41];
         let valid_ov2640_chipid2 = [0x26, 0x42];
         let chipid = self.get_sensor_chipid()?;
-        defmt::info!("result {:x}, expected {:x}", result, test_value);
-        defmt::info!("chipid {:x}{:x}", chipid[0], chipid[1]);
+        defmt::debug!("result {:x}, expected {:x}", result, test_value);
+        defmt::debug!("chipid {:x}{:x}", chipid[0], chipid[1]);
 
         if test_value == result && chipid == valid_ov2640_chipid1 || chipid == valid_ov2640_chipid2
         {
@@ -208,14 +195,14 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
     }
 
     /// Sends image capture request
-    pub fn start_capture(&mut self) -> Result<(), ArduCAMError> {
+    pub fn start_capture(&mut self) -> Result<(), ArducamError> {
         self.flush_fifo()?;
         self.start_fifo()?;
         Ok(())
     }
 
     /// Checks if image capture is done
-    pub fn is_capture_done(&mut self) -> Result<bool, ArduCAMError> {
+    pub fn is_capture_done(&mut self) -> Result<bool, ArducamError> {
         self.arduchip_read_reg(ARDUCHIP_TRIG)
             .map(|result| result & CAP_DONE_MASK != 0)
     }
@@ -226,33 +213,22 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
     ///
     /// # Returns
     /// Actual image size
-    pub fn read_captured_image(&mut self, data_out: IterMut<u8>) -> Result<usize, ArduCAMError> {
-        let length = self.get_fifo_length()?;
-        let mut final_length = 0;
-        // self.spi_cs.set_low().map_err(Error::Pin)?;
-        self.set_fifo_burst()?;
-        let mut curr_byte = 0;
-        #[allow(unused_assignments)]
-        let mut prev_byte = 0;
-        for (i, b) in data_out.enumerate() {
-            prev_byte = curr_byte;
-            let mut curr_byte_tmp = [0u8; 1];
-            self.spi
-                .read(&mut curr_byte_tmp)
-                .map_err(|_| ArduCAMError::SpiError)?;
-            curr_byte = curr_byte_tmp[0];
-            *b = curr_byte;
-            if prev_byte == 0xFF && curr_byte == 0xD9 || i as u32 > length {
-                final_length = i;
-                break;
-            }
-        }
-        self.flush_fifo()?;
-        Ok(final_length)
+    pub fn read_captured_image(&mut self, out: &mut [u8]) -> Result<(), ArducamError> {
+        self.transaction(&mut [
+            Operation::Write(&[FIFO_BURST & 0x7f]),
+            Operation::Read(out),
+            Operation::Write(&[ARDUCHIP_FIFO | 0x80, FIFO_CLEAR_MASK]),
+        ])
     }
 
+    // fn set_fifo_burst(&mut self) -> Result<(), ArduCAMError> {
+    //     self.spi
+    //         .write(&[FIFO_BURST])
+    //         .map_err(|_| ArduCAMError::SpiError)
+    // }
+
     /// Returns image length reported by arduchip in FIFO
-    pub fn get_fifo_length(&mut self) -> Result<u32, ArduCAMError> {
+    pub fn get_fifo_length(&mut self) -> Result<u32, ArducamError> {
         let mut len_builder = (0u32, 0u32, 0u32);
         len_builder.0 = self.arduchip_read_reg(FIFO_SIZE1)?.into();
         len_builder.1 = self.arduchip_read_reg(FIFO_SIZE2)?.into();
@@ -261,7 +237,7 @@ impl<I: I2c, S: SpiBus> Arducam<I, S> {
     }
 
     /// Returns sensor vendor and product ID
-    pub fn get_sensor_chipid(&mut self) -> Result<[u8; 2], ArduCAMError> {
+    pub fn get_sensor_chipid(&mut self) -> Result<[u8; 2], ArducamError> {
         let mut chipid: [u8; 2] = [0; 2];
         self.sensor_writereg8_8(0xFF, 0x01)?;
         self.sensor_readreg8_8(OV2640_CHIPID_HIGH, &mut chipid[0..1])?;
