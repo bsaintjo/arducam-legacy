@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+
 use arducam_legacy::{Arducam, Resolution};
 use defmt::*;
 use embassy_executor::Spawner;
@@ -11,7 +12,15 @@ use embassy_stm32::{
 };
 use embassy_time::{Delay, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
+use serde::Serialize;
+use serde_json_core::{heapless::String, to_string};
 use {defmt_rtt as _, panic_probe as _};
+
+#[derive(Serialize)]
+struct Image<'a> {
+    fifo_length: u32,
+    bytes: &'a [u8]
+}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -41,18 +50,29 @@ async fn main(_spawner: Spawner) {
         info!("Disconnected?");
     }
 
-    arducam.start_capture().unwrap();
-    info!("Capture started.");
-    while !arducam.is_capture_done().unwrap() {
-        // info!("Capture in progress...");
-        Timer::after_millis(50).await;
-    }
+    loop {
+        arducam.start_capture().unwrap();
+        info!("Capture started.");
+        while !arducam.is_capture_done().unwrap() {
+            // info!("Capture in progress...");
+            Timer::after_millis(50).await;
+        }
 
-    info!("Capture complete");
-    let length = arducam.get_fifo_length().unwrap();
-    info!("FIFO length: {}", length);
-    let mut image = [0u8; 8192];
-    arducam.read_captured_image(&mut image).unwrap();
-    info!("Image read!");
-    info!("First bytes {:02x}", image[..12]);
+        info!("Capture complete");
+        let length = arducam.get_fifo_length().unwrap();
+        info!("FIFO length: {}", length);
+        let mut image = [0u8; 4096];
+        arducam.read_captured_image(&mut image).unwrap();
+        info!("Image read!");
+        info!("First bytes {:02x}", image[..24]);
+        info!("end? bytes {:02x}", image[3079..3120]);
+        info!("Last bytes {:02x}", image[image.len() - 20..]);
+
+        let image = Image { fifo_length: length, bytes: &image };
+        let as_string: Result<String<16000>, _> = to_string(&image);
+        match as_string {
+            Ok(s) => println!("{}", s.as_str()),
+            Err(_) => println!("Buffer full"),
+        }
+    }
 }
