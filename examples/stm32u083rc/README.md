@@ -29,3 +29,9 @@ JPEG file created successfully: output.jpg
 JPEG file created successfully: output.jpg
 # Open output.jpg and see file updates.
 ```
+
+## Known problems
+
+Currently the async/DMA version doesn't seem to work properly on the STM32083RC. I had to switch to a different board, and a working version can be found in the [rp235x](../examples/rp235x/src/bin/arducam-async.rs) example. In particular, I2C async works but there is some issue with the SPI Async/DMA interface.
+
+If you are trying to adapt this example to another STM32 board, try to run the [spi_dma](src/bin/spi_dma.rs) example, and if that works, then there might be a chance the arducam async examples will too.
