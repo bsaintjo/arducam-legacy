@@ -72,7 +72,10 @@ pub enum ArducamError {
 impl<I: AsyncI2c, S: AsyncSpiDevice> Arducam<Async, I, S> {
     pub fn new(i2c: I, spi: S, resolution: Resolution) -> Self {
         Self {
-            mode: PhantomData, i2c, spi, resolution
+            mode: PhantomData,
+            i2c,
+            spi,
+            resolution,
         }
     }
 
@@ -85,27 +88,43 @@ impl<I: AsyncI2c, S: AsyncSpiDevice> Arducam<Async, I, S> {
 
     async fn sensor_writereg8_8(&mut self, reg: u8, data: u8) -> Result<(), ArducamError> {
         self.i2c
-            .write(OV2640_ADDR, &[reg, data]).await
+            .write(OV2640_ADDR, &[reg, data])
+            .await
             .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
     async fn arduchip_write_reg(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
         // self.arduchip_write(addr | 0x80, data)
+        // self.spi
+        //     .write(&[addr | 0x80, data])
+        //     .await
+        //     .map_err(|e| ArducamError::SpiError(e.kind()))?;
+        // Ok(())
         self.spi
-            .write(&[addr | 0x80, data]).await
-            .map_err(|e| ArducamError::SpiError(e.kind()))
+            .transaction(&mut [Operation::Write(&[addr | 0x80]), Operation::Write(&[data])])
+            .await
+            .map_err(|e| ArducamError::SpiError(e.kind()))?;
+        Ok(())
     }
 
-    async fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), ArducamError> {
+    async fn transaction(
+        &mut self,
+        operations: &mut [Operation<'_, u8>],
+    ) -> Result<(), ArducamError> {
         self.spi
-            .transaction(operations).await
+            .transaction(operations)
+            .await
             .map_err(|e| ArducamError::SpiError(e.kind()))
     }
 
     async fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArducamError> {
         // self.arduchip_read(addr & 0x7F)
         let mut value = [0u8; 1];
-        self.transaction(&mut [Operation::Write(&[addr & 0x7f]), Operation::Read(&mut value)]).await?;
+        self.transaction(&mut [
+            Operation::Write(&[addr & 0x7f]),
+            Operation::Read(&mut value),
+        ])
+        .await?;
         Ok(value[0])
     }
 
@@ -131,24 +150,30 @@ impl<I: AsyncI2c, S: AsyncSpiDevice> Arducam<Async, I, S> {
     }
 
     async fn flush_fifo(&mut self) -> Result<(), ArducamError> {
-        self.arduchip_write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK).await
+        self.arduchip_write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK)
+            .await
     }
 
     async fn start_fifo(&mut self) -> Result<(), ArducamError> {
-        self.arduchip_write_reg(ARDUCHIP_FIFO, FIFO_START_MASK).await
+        self.arduchip_write_reg(ARDUCHIP_FIFO, FIFO_START_MASK)
+            .await
     }
 
     pub async fn init(&mut self) -> Result<(), ArducamError> {
         self.arduchip_write_reg(0x07, 0x80).await?;
-        self.transaction(&mut [Operation::DelayNs(100_000_000)]).await?;
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])
+            .await?;
         self.arduchip_write_reg(0x07, 0x00).await?;
-        self.transaction(&mut [Operation::DelayNs(100_000_000)]).await?;
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])
+            .await?;
 
         self.sensor_writereg8_8(0xFF, 0x01).await?;
-        self.transaction(&mut [Operation::DelayNs(100_000_000)]).await?;
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])
+            .await?;
 
         self.sensor_writereg8_8(0x12, 0x80).await?;
-        self.transaction(&mut [Operation::DelayNs(100_000_000)]).await?;
+        self.transaction(&mut [Operation::DelayNs(100_000_000)])
+            .await?;
 
         self.sensor_writeregs8_8(&OV2640_JPEG_INIT).await?;
         self.sensor_writeregs8_8(&OV2640_YUV422).await?;
@@ -196,7 +221,8 @@ impl<I: AsyncI2c, S: AsyncSpiDevice> Arducam<Async, I, S> {
 
     /// Checks if image capture is done
     pub async fn is_capture_done(&mut self) -> Result<bool, ArducamError> {
-        self.arduchip_read_reg(ARDUCHIP_TRIG).await
+        self.arduchip_read_reg(ARDUCHIP_TRIG)
+            .await
             .map(|result| result & CAP_DONE_MASK != 0)
     }
 
@@ -211,7 +237,8 @@ impl<I: AsyncI2c, S: AsyncSpiDevice> Arducam<Async, I, S> {
             Operation::Write(&[FIFO_BURST & 0x7f]),
             Operation::Read(out),
             Operation::Write(&[ARDUCHIP_FIFO | 0x80, FIFO_CLEAR_MASK]),
-        ]).await
+        ])
+        .await
     }
 
     /// Returns image length reported by arduchip in FIFO
@@ -227,8 +254,10 @@ impl<I: AsyncI2c, S: AsyncSpiDevice> Arducam<Async, I, S> {
     pub async fn get_sensor_chipid(&mut self) -> Result<[u8; 2], ArducamError> {
         let mut chipid: [u8; 2] = [0; 2];
         self.sensor_writereg8_8(0xFF, 0x01).await?;
-        self.sensor_readreg8_8(OV2640_CHIPID_HIGH, &mut chipid[0..1]).await?;
-        self.sensor_readreg8_8(OV2640_CHIPID_LOW, &mut chipid[1..2]).await?;
+        self.sensor_readreg8_8(OV2640_CHIPID_HIGH, &mut chipid[0..1])
+            .await?;
+        self.sensor_readreg8_8(OV2640_CHIPID_LOW, &mut chipid[1..2])
+            .await?;
         Ok(chipid)
     }
 }
@@ -256,9 +285,9 @@ impl<I: I2c, S: SpiDevice> Arducam<Blocking, I, S> {
     }
 
     // fn arduchip_write(&mut self, addr: u8, data: u8) -> Result<(), ArducamError> {
-        // self.spi
-        //     .write(&[addr, data])
-        //     .map_err(|e| ArducamError::SpiError(e.kind()))
+    // self.spi
+    //     .write(&[addr, data])
+    //     .map_err(|e| ArducamError::SpiError(e.kind()))
     // }
 
     // fn arduchip_read(&mut self, addr: u8) -> Result<u8, ArducamError> {
@@ -277,7 +306,10 @@ impl<I: I2c, S: SpiDevice> Arducam<Blocking, I, S> {
     fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArducamError> {
         // self.arduchip_read(addr & 0x7F)
         let mut value = [0u8; 1];
-        self.transaction(&mut [Operation::Write(&[addr & 0x7f]), Operation::Read(&mut value)])?;
+        self.transaction(&mut [
+            Operation::Write(&[addr & 0x7f]),
+            Operation::Read(&mut value),
+        ])?;
         Ok(value[0])
     }
 

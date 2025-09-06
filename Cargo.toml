@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "examples/stm32-embassy-example"]
+members = [".", "examples/*"]
 
 [package]
 authors = [
