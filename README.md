@@ -34,4 +34,4 @@ arducam-legacy = "0.2.0"
 
 ## Example
 
-An example with STM32U0 using this repo can be found [here](examples/stm32-embassy-example/).
+There are included examples for the [STM32U083RC](examples/stm32u083rc/) and [Raspberry Pi Pico 2](examples/rp235x/).
