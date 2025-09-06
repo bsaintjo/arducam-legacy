@@ -4,6 +4,8 @@
 #![no_std]
 #![no_main]
 
+#![allow(async_fn_in_trait)]
+
 use core::marker::PhantomData;
 
 use embedded_hal_1::{
@@ -11,9 +13,10 @@ use embedded_hal_1::{
     spi::{self, Error as SpiError, Operation, SpiDevice},
 };
 use embedded_hal_async::{i2c::I2c as AsyncI2c, spi::SpiDevice as AsyncSpiDevice};
-use registers::*;
+use ov2640_registers::*;
 
-pub mod registers;
+pub mod ov2640_registers;
+pub mod ov5642_registers;
 
 const ARDUCHIP_TEST1: u8 = 0x00;
 const ARDUCHIP_FIFO: u8 = 0x04;
