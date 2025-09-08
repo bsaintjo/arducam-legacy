@@ -28,6 +28,31 @@ impl Camera for OV2640 {
     type RegisterType = u8;
 }
 
+pub trait BlockingCamera: Camera {
+    fn sensor_readreg8_8(&mut self, reg: Self::RegisterType, out: &mut [u8]) -> Result<(), ArducamError>;
+
+    fn sensor_writereg8_8(&mut self, reg: Self::RegisterType, data: u8) -> Result<(), ArducamError>;
+
+    fn arduchip_write_reg(&mut self, addr: Self::RegisterType, data: u8) -> Result<(), ArducamError>;
+
+    fn transaction(
+        &mut self,
+        operations: &mut [Operation<'_, u8>],
+    ) -> Result<(), ArducamError>;
+
+    fn arduchip_read_reg(&mut self, addr: Self::RegisterType) -> Result<u8, ArducamError>;
+
+    fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError>;
+
+    fn send_resolution(&mut self) -> Result<(), ArducamError>;
+
+    fn flush_fifo(&mut self) -> Result<(), ArducamError>;
+
+    fn start_fifo(&mut self) -> Result<(), ArducamError>;
+
+    fn init(&mut self) -> Result<(), ArducamError>;
+}
+
 pub trait AsyncCamera: Camera {
 
     async fn sensor_readreg8_8(&mut self, reg: Self::RegisterType, out: &mut [u8]) -> Result<(), ArducamError>;
