@@ -58,6 +58,7 @@ portable-atomic = { version = "1.5", features = ["critical-section"] }
 log = "0.4"
 # embedded-sdmmc = "0.7.0"
 arducam-legacy = { version = "0.2", path = "../.." }
+embassy-usb = "0.5.1"
 
 [profile.release]
 # Enable generation of debug symbols even on release builds
