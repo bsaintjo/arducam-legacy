@@ -13,7 +13,7 @@ use crate::{
 const I2C_ADDR: u8 = 0x3c;
 const OV562_CHIPID_HIGH_ADDR: [u8; 2] = [0x30, 0x0a];
 const OV562_CHIPID_LOW_ADDR: [u8; 2] = [0x30, 0x0b];
-const OV562_CHIPID: u16 = 0x5642;
+pub const OV562_CHIPID: u16 = 0x5642;
 
 pub enum CameraMode {
     JPEG,
@@ -71,10 +71,11 @@ where
             .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
-    fn i2c_write_registers(&mut self, regs: &[[u8; 3]]) -> Result<(), ArducamError> {
+    fn i2c_write_registers<D: DelayNs>(&mut self, regs: &[[u8; 3]], mut delay: D) -> Result<(), ArducamError> {
         for reg in regs {
             let addr = u16::from_be_bytes([reg[0], reg[1]]);
             self.i2c_write(addr, reg[2])?;
+            delay.delay_ms(1);
         }
         Ok(())
     }
@@ -108,21 +109,21 @@ where
     }
 
     pub fn init<D: DelayNs>(&mut self, mut delay: D) -> Result<(), ArducamError> {
-        self.spi_write(0x07, 0x80, &mut delay)?;
-        delay.delay_ms(100);
-        self.spi_write(0x07, 0x00, &mut delay)?;
-        delay.delay_ms(100);
+        // self.spi_write(0x07, 0x80, &mut delay)?;
+        // delay.delay_ms(100);
+        // self.spi_write(0x07, 0x00, &mut delay)?;
+        // delay.delay_ms(100);
 
         self.i2c_write(0x3008, 0x80)?;
+        self.i2c_write_registers(&OV5642_QVGA_PREVIEW, &mut delay)?;
         match self.config.mode {
             CameraMode::JPEG => {
-                self.i2c_write_registers(&OV5642_QVGA_PREVIEW)?;
                 // self.i2c_write_registers(&OV5642_QVGA_PREVIEW_1)?;
                 // self.i2c_write_registers(&OV5642_QVGA_PREVIEW_2)?;
                 delay.delay_ns(100);
                 delay.delay_ns(100);
-                self.i2c_write_registers(&OV5642_JPEG_CAPTURE_QSXGA)?;
-                self.i2c_write_registers(&OV5642_320_X_240)?;
+                self.i2c_write_registers(&OV5642_JPEG_CAPTURE_QSXGA, &mut delay)?;
+                self.i2c_write_registers(&OV5642_320_X_240, &mut delay)?;
                 delay.delay_ns(100);
                 self.i2c_write(0x3818, 0xa8)?;
                 self.i2c_write(0x3621, 0x10)?;
@@ -131,8 +132,8 @@ where
             }
 
             CameraMode::BMP => {
-                self.i2c_write_registers(&OV5642_QVGA_PREVIEW_1)?;
-                self.i2c_write_registers(&OV5642_QVGA_PREVIEW_2)?;
+                // self.i2c_write_registers(&OV5642_QVGA_PREVIEW_1)?;
+                // self.i2c_write_registers(&OV5642_QVGA_PREVIEW_2)?;
                 delay.delay_ns(100);
                 self.i2c_write(0x4740, 0x21)?;
                 self.i2c_write(0x501e, 0x2a)?;
@@ -149,8 +150,8 @@ where
             }
 
             CameraMode::RAW => {
-                self.i2c_write_registers(&OV5642_1280_X_960_RAW)?;
-                self.i2c_write_registers(&OV5642_640_X_480_RAW)?;
+                self.i2c_write_registers(&OV5642_1280_X_960_RAW, &mut delay)?;
+                self.i2c_write_registers(&OV5642_640_X_480_RAW, &mut delay)?;
             }
         }
         Ok(())
@@ -204,17 +205,17 @@ where
         self.spi_write(ARDUCHIP_FRAMES, 0x00, delay)
     }
 
-    pub fn set_jpeg_size(&mut self, resolution: Resolution) -> Result<(), ArducamError> {
+    pub fn set_jpeg_size<D: DelayNs>(&mut self, resolution: Resolution, mut delay: D) -> Result<(), ArducamError> {
         match resolution {
-            Resolution::Res160x120 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res1024x768 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res1280x1024 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res1600x1200 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res176x144 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res320x240 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res352x288 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res640x480 => self.i2c_write_registers(&OV5642_320_X_240),
-            Resolution::Res800x600 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res160x120 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res1024x768 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res1280x1024 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res1600x1200 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res176x144 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res320x240 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res352x288 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res640x480 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
+            Resolution::Res800x600 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
         }?;
         Ok(())
     }
