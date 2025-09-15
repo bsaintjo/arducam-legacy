@@ -40,7 +40,7 @@ async fn main(_spawner: Spawner) {
     arducam.chip_id(&mut chip_id).unwrap();
     info!("Arducam chip ID: {:x}", chip_id);
 
-    if arducam.spi_test().unwrap() {
+    if arducam.spi_test(&mut delay).unwrap() {
         info!("SPI Test Successful");
     } else {
         error!("SPI Test Failed");
@@ -49,15 +49,15 @@ async fn main(_spawner: Spawner) {
     arducam.init(&mut delay).unwrap();
     info!("Initialized!");
 
-    arducam.vsync_mask().unwrap();
+    arducam.vsync_mask(&mut delay).unwrap();
     arducam.set_jpeg_size(Resolution::Res320x240).unwrap();
     Timer::after_millis(1000).await;
-    arducam.clear_fifo_flag().unwrap();
-    arducam.frames().unwrap();
+    arducam.clear_fifo_flag(&mut delay).unwrap();
+    arducam.frames(&mut delay).unwrap();
 
-    arducam.flush_fifo().unwrap();
-    arducam.clear_fifo_flag().unwrap();
-    arducam.start_capture().unwrap();
+    arducam.flush_fifo(&mut delay).unwrap();
+    arducam.clear_fifo_flag(&mut delay).unwrap();
+    arducam.start_capture(&mut delay).unwrap();
     info!("Capture started!");
 
     // Timer::after_millis(200).await;

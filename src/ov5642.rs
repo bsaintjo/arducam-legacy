@@ -40,12 +40,14 @@ where
         Self { i2c, spi, config }
     }
 
-    fn spi_write(&mut self, addr: u8, value: u8) -> Result<(), ArducamError> {
+    fn spi_write<D: DelayNs>(&mut self, addr: u8, value: u8, mut delay: D) -> Result<(), ArducamError> {
         const WRITE_FLAG: u8 = 0x80;
         let addr = addr | WRITE_FLAG;
         self.spi
             .write(&[addr, value])
-            .map_err(|e| ArducamError::SpiError(e.kind()))
+            .map_err(|e| ArducamError::SpiError(e.kind()))?;
+        delay.delay_ms(1);
+        Ok(())
     }
 
     fn spi_read(&mut self, addr: u8) -> Result<u8, ArducamError> {
@@ -83,9 +85,9 @@ where
             .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
-    pub fn spi_test(&mut self) -> Result<bool, ArducamError> {
+    pub fn spi_test<D: DelayNs>(&mut self, delay: D) -> Result<bool, ArducamError> {
         let test_value = 0x56;
-        self.spi_write(ARDUCHIP_TEST1, test_value)?;
+        self.spi_write(ARDUCHIP_TEST1, test_value, delay)?;
         let result = self.spi_read(ARDUCHIP_TEST1)?;
         Ok(test_value == result)
     }
@@ -106,9 +108,9 @@ where
     }
 
     pub fn init<D: DelayNs>(&mut self, mut delay: D) -> Result<(), ArducamError> {
-        self.spi_write(0x07, 0x80)?;
+        self.spi_write(0x07, 0x80, &mut delay)?;
         delay.delay_ms(100);
-        self.spi_write(0x07, 0x00)?;
+        self.spi_write(0x07, 0x00, &mut delay)?;
         delay.delay_ms(100);
 
         self.i2c_write(0x3008, 0x80)?;
@@ -154,16 +156,16 @@ where
         Ok(())
     }
 
-    pub fn flush_fifo(&mut self) -> Result<(), ArducamError> {
-        self.spi_write(0x04, 0x01)
+    pub fn flush_fifo<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
+        self.spi_write(0x04, 0x01, delay)
     }
 
-    pub fn clear_fifo_flag(&mut self) -> Result<(), ArducamError> {
-        self.spi_write(0x04, 0x01)
+    pub fn clear_fifo_flag<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
+        self.spi_write(0x04, 0x01, delay)
     }
 
-    pub fn start_capture(&mut self) -> Result<(), ArducamError> {
-        self.spi_write(0x04, 0x02)
+    pub fn start_capture<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
+        self.spi_write(0x04, 0x02, delay)
     }
 
     pub fn is_capture_done(&mut self) -> Result<bool, ArducamError> {
@@ -191,15 +193,15 @@ where
         Ok(())
     }
 
-    pub fn vsync_mask(&mut self) -> Result<(), ArducamError> {
+    pub fn vsync_mask<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
         const ARDUCHIP_TIM: u8 = 0x03;
         const VSYNC_LEVEL_MASK: u8 = 0x02;
-        self.spi_write(ARDUCHIP_TIM, VSYNC_LEVEL_MASK)
+        self.spi_write(ARDUCHIP_TIM, VSYNC_LEVEL_MASK, delay)
     }
 
-    pub fn frames(&mut self) -> Result<(), ArducamError> {
+    pub fn frames<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
         const ARDUCHIP_FRAMES: u8 = 0x01;
-        self.spi_write(ARDUCHIP_FRAMES, 0x00)
+        self.spi_write(ARDUCHIP_FRAMES, 0x00, delay)
     }
 
     pub fn set_jpeg_size(&mut self, resolution: Resolution) -> Result<(), ArducamError> {
