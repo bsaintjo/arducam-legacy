@@ -5,6 +5,7 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,5 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build
-      run: cargo build --verbose
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv8m.main-none-eabihf
+    - name: cargo check  Raspberry Pi Pico 2
+      run: cargo --config examples/rp235x/.cargo/config.toml check -p rp235x
