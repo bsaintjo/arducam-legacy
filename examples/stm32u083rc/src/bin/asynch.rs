@@ -12,9 +12,8 @@ use embassy_stm32::{
     peripherals,
     spi::Spi,
 };
-use embassy_sync::{blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex}, mutex::Mutex};
-use embassy_time::{Delay, Timer};
-use embedded_hal_bus::spi::ExclusiveDevice;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
+use embassy_time::Timer;
 use serde::Serialize;
 use serde_json_core::{heapless::String, to_string};
 use {defmt_rtt as _, panic_probe as _};
@@ -66,8 +65,6 @@ async fn main(_spawner: Spawner) {
     let cs = Output::new(p.PB6, Level::High, Speed::VeryHigh);
 
     let device = SpiDevice::new(&bus, cs);
-    let mut delay = Delay;
-    // let device = ExclusiveDevice::new(spi, cs, delay).unwrap();
 
     let mut arducam = Arducam::new(i2c, device, Resolution::Res160x120);
     arducam.init().await.unwrap();
@@ -75,7 +72,7 @@ async fn main(_spawner: Spawner) {
     let data = arducam.get_sensor_chipid().await.unwrap();
     info!("Whoami: 0x{:x}{:x}", data[0], data[1]);
 
-    if arducam.is_connected(&mut delay).await.unwrap() {
+    if arducam.is_connected().await.unwrap() {
         info!("Connected!");
     } else {
         info!("Disconnected?");
