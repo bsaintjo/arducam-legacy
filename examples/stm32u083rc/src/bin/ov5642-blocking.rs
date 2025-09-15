@@ -1,13 +1,17 @@
 #![no_std]
 #![no_main]
 
-use arducam_legacy::{ov5642::{self, Arducam5MP, Arducam5MPConfig}, Resolution};
+use arducam_legacy::{
+    Resolution,
+    ov5642::{self, Arducam5MP, Arducam5MPConfig},
+};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::{
     gpio::{Level, Output, Speed},
     i2c::{Config, I2c},
-    spi::Spi, time::Hertz,
+    spi::Spi,
+    time::Hertz,
 };
 use embassy_time::{Delay, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
@@ -50,7 +54,7 @@ async fn main(_spawner: Spawner) {
     info!("Initialized!");
 
     arducam.vsync_mask(&mut delay).unwrap();
-    arducam.set_jpeg_size(Resolution::Res320x240).unwrap();
+    arducam.set_jpeg_size(Resolution::Res320x240, &mut delay).unwrap();
     Timer::after_millis(1000).await;
     arducam.clear_fifo_flag(&mut delay).unwrap();
     arducam.frames(&mut delay).unwrap();
@@ -75,6 +79,10 @@ async fn main(_spawner: Spawner) {
     arducam.read_captured_image(&mut image).unwrap();
     info!("Image read!");
     info!("First bytes {:02x}", image[..50]);
+    info!(
+        "Last bytes {:02x}",
+        image[fifo_length as usize - 10..fifo_length as usize + 20]
+    );
 
     loop {}
 }

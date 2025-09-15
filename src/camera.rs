@@ -4,6 +4,9 @@ use embedded_hal_1::spi::Operation;
 
 use crate::{ArducamError, Resolution};
 
+const READ_FLAG: u8 = 0x7f;
+const WRITE_FLAG: u8 = 0x80;
+
 struct OV5642;
 
 pub struct Arducam<C, M, I, S> {
@@ -17,47 +20,34 @@ pub struct Arducam<C, M, I, S> {
 struct OV2640;
 
 pub trait Camera {
-    const READ_FLAG: u8;
-    const WRITE_FLAG: u8;
-    type RegisterType;
+    type I2cRegisterAddr;
+    type MultiRegister;
 }
 
 impl Camera for OV2640 {
-    const READ_FLAG: u8 = 0x7f;
-    const WRITE_FLAG: u8 = 0x80;
-    type RegisterType = u8;
+    type I2cRegisterAddr = u8;
+    type MultiRegister = [u8; 2];
 }
 
 pub trait BlockingCamera: Camera {
-    fn sensor_readreg8_8(&mut self, reg: Self::RegisterType, out: &mut [u8]) -> Result<(), ArducamError>;
+    fn i2c_read(&mut self, reg: Self::I2cRegisterAddr, out: &mut u8) -> Result<(), ArducamError>;
 
-    fn sensor_writereg8_8(&mut self, reg: Self::RegisterType, data: u8) -> Result<(), ArducamError>;
+    fn i2c_write(&mut self, reg: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
 
-    fn arduchip_write_reg(&mut self, addr: Self::RegisterType, data: u8) -> Result<(), ArducamError>;
+    fn i2c_write_registers(&mut self, regs: &[Self::MultiRegister]) -> Result<(), ArducamError>;
 
-    fn transaction(
-        &mut self,
-        operations: &mut [Operation<'_, u8>],
-    ) -> Result<(), ArducamError>;
+    fn spi_write(&mut self, addr: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
 
-    fn arduchip_read_reg(&mut self, addr: Self::RegisterType) -> Result<u8, ArducamError>;
-
-    fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError>;
-
-    fn send_resolution(&mut self) -> Result<(), ArducamError>;
-
-    fn flush_fifo(&mut self) -> Result<(), ArducamError>;
-
-    fn start_fifo(&mut self) -> Result<(), ArducamError>;
+    fn spi_read(&mut self, addr: Self::I2cRegisterAddr) -> Result<u8, ArducamError>;
 
     fn init(&mut self) -> Result<(), ArducamError>;
 }
 
 pub trait AsyncCamera: Camera {
 
-    async fn sensor_readreg8_8(&mut self, reg: Self::RegisterType, out: &mut [u8]) -> Result<(), ArducamError>;
+    async fn sensor_readreg8_8(&mut self, reg: Self::I2cRegisterAddr, out: &mut [u8]) -> Result<(), ArducamError>;
 
-    async fn sensor_writereg8_8(&mut self, reg: Self::RegisterType, data: u8) -> Result<(), ArducamError>;
+    async fn sensor_writereg8_8(&mut self, reg: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
     // async fn sensor_writereg8_8(&mut self, reg: u8, data: u8) -> Result<(), ArducamError> {
         // self.i2c
         //     .write(OV2640_ADDR, &[reg, data])
@@ -65,7 +55,7 @@ pub trait AsyncCamera: Camera {
         //     .map_err(|e| ArducamError::I2cError(e.kind()))
     // }
 
-    async fn arduchip_write_reg(&mut self, addr: Self::RegisterType, data: u8) -> Result<(), ArducamError>;
+    async fn arduchip_write_reg(&mut self, addr: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
         // self.arduchip_write(addr | 0x80, data)
         // self.spi
         //     .write(&[addr | 0x80, data])
@@ -79,21 +69,8 @@ pub trait AsyncCamera: Camera {
         // Ok(())
     // }
 
-    async fn transaction(
-        &mut self,
-        operations: &mut [Operation<'_, u8>],
-    ) -> Result<(), ArducamError>;
-    // async fn transaction(
-    //     &mut self,
-    //     operations: &mut [Operation<'_, u8>],
-    // ) -> Result<(), ArducamError> {
-    //     self.spi
-    //         .transaction(operations)
-    //         .await
-    //         .map_err(|e| ArducamError::SpiError(e.kind()))
-    // }
 
-    async fn arduchip_read_reg(&mut self, addr: Self::RegisterType) -> Result<u8, ArducamError>;
+    async fn arduchip_read_reg(&mut self, addr: Self::I2cRegisterAddr) -> Result<u8, ArducamError>;
     // async fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArducamError> {
         // self.arduchip_read(addr & 0x7F)
         // let mut value = [0u8; 1];

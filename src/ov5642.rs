@@ -6,8 +6,11 @@ use embedded_hal_1::{
 
 use crate::{
     ov5642_registers::{
-        OV5642_1280_X_960_RAW, OV5642_320_X_240, OV5642_640_X_480_RAW, OV5642_JPEG_CAPTURE_QSXGA, OV5642_QVGA_PREVIEW, OV5642_QVGA_PREVIEW_1, OV5642_QVGA_PREVIEW_2
-    }, ArducamError, Resolution, ARDUCHIP_FIFO, ARDUCHIP_TEST1, ARDUCHIP_TRIG, CAP_DONE_MASK, FIFO_BURST, FIFO_CLEAR_MASK
+        OV5642_1280_X_960_RAW, OV5642_320_X_240, OV5642_640_X_480_RAW, OV5642_JPEG_CAPTURE_QSXGA,
+        OV5642_QVGA_PREVIEW, OV5642_QVGA_PREVIEW_1, OV5642_QVGA_PREVIEW_2,
+    },
+    ArducamError, Resolution, ARDUCHIP_FIFO, ARDUCHIP_TEST1, ARDUCHIP_TRIG, CAP_DONE_MASK,
+    FIFO_BURST, FIFO_CLEAR_MASK,
 };
 
 const I2C_ADDR: u8 = 0x3c;
@@ -40,7 +43,12 @@ where
         Self { i2c, spi, config }
     }
 
-    fn spi_write<D: DelayNs>(&mut self, addr: u8, value: u8, mut delay: D) -> Result<(), ArducamError> {
+    fn spi_write<D: DelayNs>(
+        &mut self,
+        addr: u8,
+        value: u8,
+        mut delay: D,
+    ) -> Result<(), ArducamError> {
         const WRITE_FLAG: u8 = 0x80;
         let addr = addr | WRITE_FLAG;
         self.spi
@@ -71,7 +79,11 @@ where
             .map_err(|e| ArducamError::I2cError(e.kind()))
     }
 
-    fn i2c_write_registers<D: DelayNs>(&mut self, regs: &[[u8; 3]], mut delay: D) -> Result<(), ArducamError> {
+    fn i2c_write_registers<D: DelayNs>(
+        &mut self,
+        regs: &[[u8; 3]],
+        mut delay: D,
+    ) -> Result<(), ArducamError> {
         for reg in regs {
             let addr = u16::from_be_bytes([reg[0], reg[1]]);
             self.i2c_write(addr, reg[2])?;
@@ -205,7 +217,11 @@ where
         self.spi_write(ARDUCHIP_FRAMES, 0x00, delay)
     }
 
-    pub fn set_jpeg_size<D: DelayNs>(&mut self, resolution: Resolution, mut delay: D) -> Result<(), ArducamError> {
+    pub fn set_jpeg_size<D: DelayNs>(
+        &mut self,
+        resolution: Resolution,
+        mut delay: D,
+    ) -> Result<(), ArducamError> {
         match resolution {
             Resolution::Res160x120 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
             Resolution::Res1024x768 => self.i2c_write_registers(&OV5642_320_X_240, &mut delay),
