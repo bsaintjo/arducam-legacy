@@ -17,6 +17,7 @@ use ov2640_registers::*;
 
 pub mod ov2640_registers;
 pub mod ov5642_registers;
+pub mod ov5642;
 pub mod camera;
 
 const ARDUCHIP_TEST1: u8 = 0x00;

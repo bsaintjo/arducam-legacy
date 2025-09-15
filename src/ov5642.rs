@@ -1,0 +1,219 @@
+use embedded_hal_1::{
+    delay::DelayNs,
+    i2c::{Error as I2cError, I2c},
+    spi::{Error as SpiError, Operation, SpiDevice},
+};
+
+use crate::{
+    ov5642_registers::{
+        OV5642_1280_X_960_RAW, OV5642_320_X_240, OV5642_640_X_480_RAW, OV5642_JPEG_CAPTURE_QSXGA, OV5642_QVGA_PREVIEW, OV5642_QVGA_PREVIEW_1, OV5642_QVGA_PREVIEW_2
+    }, ArducamError, Resolution, ARDUCHIP_FIFO, ARDUCHIP_TEST1, ARDUCHIP_TRIG, CAP_DONE_MASK, FIFO_BURST, FIFO_CLEAR_MASK
+};
+
+const I2C_ADDR: u8 = 0x3c;
+const OV562_CHIPID_HIGH_ADDR: [u8; 2] = [0x30, 0x0a];
+const OV562_CHIPID_LOW_ADDR: [u8; 2] = [0x30, 0x0b];
+const OV562_CHIPID: u16 = 0x5642;
+
+pub enum CameraMode {
+    JPEG,
+    RAW,
+    BMP,
+}
+
+pub struct Arducam5MPConfig {
+    pub mode: CameraMode,
+}
+
+pub struct Arducam5MP<I, S> {
+    i2c: I,
+    spi: S,
+    config: Arducam5MPConfig,
+}
+
+impl<I, S> Arducam5MP<I, S>
+where
+    I: I2c,
+    S: SpiDevice,
+{
+    pub fn new(i2c: I, spi: S, config: Arducam5MPConfig) -> Self {
+        Self { i2c, spi, config }
+    }
+
+    fn spi_write(&mut self, addr: u8, value: u8) -> Result<(), ArducamError> {
+        const WRITE_FLAG: u8 = 0x80;
+        let addr = addr | WRITE_FLAG;
+        self.spi
+            .write(&[addr, value])
+            .map_err(|e| ArducamError::SpiError(e.kind()))
+    }
+
+    fn spi_read(&mut self, addr: u8) -> Result<u8, ArducamError> {
+        const READ_FLAG: u8 = 0x7f;
+        let value = &mut [0u8];
+        self.spi
+            .transaction(&mut [
+                Operation::Write(&[addr & READ_FLAG]),
+                Operation::Read(value),
+            ])
+            .map_err(|e| ArducamError::SpiError(e.kind()))?;
+        Ok(value[0])
+    }
+
+    fn i2c_write(&mut self, addr: u16, value: u8) -> Result<(), ArducamError> {
+        let mut buffer = [0u8; 3];
+        buffer[0..2].copy_from_slice(&addr.to_be_bytes());
+        buffer[2] = value;
+        self.i2c
+            .write(I2C_ADDR, &buffer)
+            .map_err(|e| ArducamError::I2cError(e.kind()))
+    }
+
+    fn i2c_write_registers(&mut self, regs: &[[u8; 3]]) -> Result<(), ArducamError> {
+        for reg in regs {
+            let addr = u16::from_be_bytes([reg[0], reg[1]]);
+            self.i2c_write(addr, reg[2])?;
+        }
+        Ok(())
+    }
+
+    fn i2c_read(&mut self, addr: u16, output: &mut u8) -> Result<(), ArducamError> {
+        self.i2c
+            .write_read(I2C_ADDR, &addr.to_be_bytes(), core::slice::from_mut(output))
+            .map_err(|e| ArducamError::I2cError(e.kind()))
+    }
+
+    pub fn spi_test(&mut self) -> Result<bool, ArducamError> {
+        let test_value = 0x56;
+        self.spi_write(ARDUCHIP_TEST1, test_value)?;
+        let result = self.spi_read(ARDUCHIP_TEST1)?;
+        Ok(test_value == result)
+    }
+
+    pub fn chip_id(&mut self, chip_id: &mut u16) -> Result<(), ArducamError> {
+        let mut tmp_chip_id = [0u8; 2];
+        self.i2c_write(0x00FF, 0x01)?;
+        self.i2c_read(
+            u16::from_be_bytes(OV562_CHIPID_HIGH_ADDR),
+            &mut tmp_chip_id[0],
+        )?;
+        self.i2c_read(
+            u16::from_be_bytes(OV562_CHIPID_LOW_ADDR),
+            &mut tmp_chip_id[1],
+        )?;
+        *chip_id = u16::from_be_bytes(tmp_chip_id);
+        Ok(())
+    }
+
+    pub fn init<D: DelayNs>(&mut self, mut delay: D) -> Result<(), ArducamError> {
+        self.spi_write(0x07, 0x80)?;
+        delay.delay_ms(100);
+        self.spi_write(0x07, 0x00)?;
+        delay.delay_ms(100);
+
+        self.i2c_write(0x3008, 0x80)?;
+        match self.config.mode {
+            CameraMode::JPEG => {
+                self.i2c_write_registers(&OV5642_QVGA_PREVIEW)?;
+                // self.i2c_write_registers(&OV5642_QVGA_PREVIEW_1)?;
+                // self.i2c_write_registers(&OV5642_QVGA_PREVIEW_2)?;
+                delay.delay_ns(100);
+                delay.delay_ns(100);
+                self.i2c_write_registers(&OV5642_JPEG_CAPTURE_QSXGA)?;
+                self.i2c_write_registers(&OV5642_320_X_240)?;
+                delay.delay_ns(100);
+                self.i2c_write(0x3818, 0xa8)?;
+                self.i2c_write(0x3621, 0x10)?;
+                self.i2c_write(0x3801, 0xb0)?;
+                self.i2c_write(0x4407, 0x04)?;
+            }
+
+            CameraMode::BMP => {
+                self.i2c_write_registers(&OV5642_QVGA_PREVIEW_1)?;
+                self.i2c_write_registers(&OV5642_QVGA_PREVIEW_2)?;
+                delay.delay_ns(100);
+                self.i2c_write(0x4740, 0x21)?;
+                self.i2c_write(0x501e, 0x2a)?;
+                self.i2c_write(0x5002, 0xf8)?;
+                self.i2c_write(0x501f, 0x01)?;
+                self.i2c_write(0x4300, 0x61)?;
+
+                let mut reg_val = 0u8;
+                self.i2c_read(0x3818, &mut reg_val)?;
+                self.i2c_write(0x3818, reg_val | 0x60)?;
+
+                self.i2c_read(0x3621, &mut reg_val)?;
+                self.i2c_write(0x3621, reg_val & 0xdf)?;
+            }
+
+            CameraMode::RAW => {
+                self.i2c_write_registers(&OV5642_1280_X_960_RAW)?;
+                self.i2c_write_registers(&OV5642_640_X_480_RAW)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn flush_fifo(&mut self) -> Result<(), ArducamError> {
+        self.spi_write(0x04, 0x01)
+    }
+
+    pub fn clear_fifo_flag(&mut self) -> Result<(), ArducamError> {
+        self.spi_write(0x04, 0x01)
+    }
+
+    pub fn start_capture(&mut self) -> Result<(), ArducamError> {
+        self.spi_write(0x04, 0x02)
+    }
+
+    pub fn is_capture_done(&mut self) -> Result<bool, ArducamError> {
+        self.spi_read(ARDUCHIP_TRIG)
+            .map(|result| result & CAP_DONE_MASK != 0)
+    }
+
+    pub fn read_captured_image(&mut self, out: &mut [u8]) -> Result<(), ArducamError> {
+        self.spi
+            .transaction(&mut [
+                Operation::Write(&[FIFO_BURST & 0x7F]),
+                Operation::Read(out),
+                Operation::Write(&[ARDUCHIP_FIFO | 0x80, FIFO_CLEAR_MASK]),
+            ])
+            .map_err(|e| ArducamError::SpiError(e.kind()))
+    }
+
+    pub fn fifo_length(&mut self, fifo_length: &mut u32) -> Result<(), ArducamError> {
+        let fst = self.spi_read(0x42)?;
+        let snd = self.spi_read(0x43)?;
+        let thrd = self.spi_read(0x44)?;
+        // *fifo_length = u32::from_be_bytes([0u8, thrd, snd, fst]);
+        *fifo_length = ((thrd as u32) << 16) | ((snd as u32) << 8) | (fst as u32);
+        *fifo_length &= 0x07fffff;
+        Ok(())
+    }
+
+    pub fn vsync_mask(&mut self) -> Result<(), ArducamError> {
+        const ARDUCHIP_TIM: u8 = 0x03;
+        const VSYNC_LEVEL_MASK: u8 = 0x02;
+        self.spi_write(ARDUCHIP_TIM, VSYNC_LEVEL_MASK)
+    }
+
+    pub fn frames(&mut self) -> Result<(), ArducamError> {
+        const ARDUCHIP_FRAMES: u8 = 0x01;
+        self.spi_write(ARDUCHIP_FRAMES, 0x00)
+    }
+
+    pub fn set_jpeg_size(&mut self, resolution: Resolution) -> Result<(), ArducamError> {
+        match resolution {
+            Resolution::Res160x120 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res1024x768 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res1280x1024 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res1600x1200 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res176x144 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res320x240 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res352x288 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res640x480 => self.i2c_write_registers(&OV5642_320_X_240),
+            Resolution::Res800x600 => self.i2c_write_registers(&OV5642_320_X_240),
+        }?;
+        Ok(())
+    }
+}

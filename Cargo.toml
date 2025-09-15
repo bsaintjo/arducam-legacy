@@ -23,6 +23,7 @@ repository = "https://github.com/radekw8733/arducam-legacy"
 readme = "README.md"
 
 [dependencies]
+bytemuck = "1.23.2"
 defmt = "1.0.1"
 embedded-hal-1 = { package = "embedded-hal", version = "1"}
 embedded-hal-async = "1.0.0"
