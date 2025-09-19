@@ -1,8 +1,8 @@
 use core::marker::PhantomData;
 
-use embedded_hal_1::spi::Operation;
+use embedded_hal_1::{delay::DelayNs, spi::Operation};
 
-use crate::{ArducamError, Resolution};
+use crate::{ArducamError, Resolution, ARDUCHIP_TRIG, CAP_DONE_MASK, FIFO_BURST};
 
 const READ_FLAG: u8 = 0x7f;
 const WRITE_FLAG: u8 = 0x80;
@@ -36,59 +36,55 @@ pub trait BlockingCamera: Camera {
 
     fn i2c_write_registers(&mut self, regs: &[Self::MultiRegister]) -> Result<(), ArducamError>;
 
-    fn spi_write(&mut self, addr: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
+    fn spi_write<D: DelayNs>(&mut self, data: &mut [u8], delay: D) -> Result<(), ArducamError>;
 
-    fn spi_read(&mut self, addr: Self::I2cRegisterAddr) -> Result<u8, ArducamError>;
+    fn spi_read(&mut self, addr: u8) -> Result<u8, ArducamError>;
+    fn spi_read_values(&mut self, out: &mut [u8]) -> Result<(), ArducamError>;
 
     fn init(&mut self) -> Result<(), ArducamError>;
+
+    fn flush_fifo<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
+        self.spi_write(&mut [0x04, 0x01], delay)
+    }
+
+    fn clear_fifo_flag<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
+        self.spi_write(&mut [0x04, 0x01], delay)
+    }
+
+    fn start_capture<D: DelayNs>(&mut self, delay: D) -> Result<(), ArducamError> {
+        self.spi_write(&mut [0x04, 0x02], delay)
+    }
+
+    fn is_capture_done(&mut self) -> Result<bool, ArducamError> {
+        self.spi_read(ARDUCHIP_TRIG)
+            .map(|result| result & CAP_DONE_MASK != 0)
+    }
+
+    fn read_captured_image<D: DelayNs>(&mut self, out: &mut [u8], delay: D) -> Result<(), ArducamError> {
+        self.spi_write(&mut [FIFO_BURST], delay)?;
+        self.spi_read_values(out)?;
+        Ok(())
+        // self.spi
+        //     .transaction(&mut [
+        //         Operation::Write(&[FIFO_BURST & 0x7F]),
+        //         Operation::Read(out),
+        //         Operation::Write(&[ARDUCHIP_FIFO | 0x80, FIFO_CLEAR_MASK]),
+        //     ])
+            // .map_err(|e| ArducamError::SpiError(e.kind()))
+    }
 }
 
 pub trait AsyncCamera: Camera {
 
-    async fn sensor_readreg8_8(&mut self, reg: Self::I2cRegisterAddr, out: &mut [u8]) -> Result<(), ArducamError>;
+    async fn i2c_read(&mut self, reg: Self::I2cRegisterAddr, out: &mut [u8]) -> Result<(), ArducamError>;
 
-    async fn sensor_writereg8_8(&mut self, reg: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
-    // async fn sensor_writereg8_8(&mut self, reg: u8, data: u8) -> Result<(), ArducamError> {
-        // self.i2c
-        //     .write(OV2640_ADDR, &[reg, data])
-        //     .await
-        //     .map_err(|e| ArducamError::I2cError(e.kind()))
-    // }
+    async fn i2c_write(&mut self, reg: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
 
-    async fn arduchip_write_reg(&mut self, addr: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
-        // self.arduchip_write(addr | 0x80, data)
-        // self.spi
-        //     .write(&[addr | 0x80, data])
-        //     .await
-        //     .map_err(|e| ArducamError::SpiError(e.kind()))?;
-        // Ok(())
-        // self.spi
-        //     .transaction(&mut [Operation::Write(&[addr | 0x80]), Operation::Write(&[data])])
-        //     .await
-        //     .map_err(|e| ArducamError::SpiError(e.kind()))?;
-        // Ok(())
-    // }
+    async fn spi_write(&mut self, addr: Self::I2cRegisterAddr, data: u8) -> Result<(), ArducamError>;
 
+    async fn spi_read(&mut self, addr: Self::I2cRegisterAddr) -> Result<u8, ArducamError>;
 
-    async fn arduchip_read_reg(&mut self, addr: Self::I2cRegisterAddr) -> Result<u8, ArducamError>;
-    // async fn arduchip_read_reg(&mut self, addr: u8) -> Result<u8, ArducamError> {
-        // self.arduchip_read(addr & 0x7F)
-        // let mut value = [0u8; 1];
-        // self.transaction(&mut [
-        //     Operation::Write(&[addr & 0x7f]),
-        //     Operation::Read(&mut value),
-        // ])
-        // .await?;
-        // Ok(value[0])
-    // }
-
-    async fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError>;
-    // async fn sensor_writeregs8_8(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError> {
-        // for reg in regs {
-        //     self.sensor_writereg8_8(reg[0], reg[1]).await?;
-        // }
-        // Ok(())
-    // }
+    async fn i2c_write_registers(&mut self, regs: &[[u8; 2]]) -> Result<(), ArducamError>;
 
     async fn send_resolution(&mut self) -> Result<(), ArducamError>;
     // async fn send_resolution(&mut self) -> Result<(), ArducamError> {
@@ -116,7 +112,7 @@ pub trait AsyncCamera: Camera {
         //     .await
     // }
 
-    async fn init(&mut self) -> Result<(), ArducamError>;
+    // async fn init(&mut self) -> Result<(), ArducamError>;
         // self.arduchip_write_reg(0x07, 0x80).await?;
         // self.transaction(&mut [Operation::DelayNs(100_000_000)])
         //     .await?;
