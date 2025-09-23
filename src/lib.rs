@@ -19,6 +19,7 @@ pub mod ov2640_registers;
 pub mod ov5642_registers;
 pub mod ov5642;
 pub mod camera;
+pub mod image_sensor;
 
 const ARDUCHIP_TEST1: u8 = 0x00;
 const ARDUCHIP_FIFO: u8 = 0x04;

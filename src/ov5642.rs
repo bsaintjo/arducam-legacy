@@ -36,8 +36,8 @@ pub struct Arducam5MPConfig {
 
 pub struct Arducam5MP<M, I, S> {
     mode: PhantomData<M>,
-    i2c: I,
-    spi: S,
+    pub(crate) i2c: I,
+    pub(crate) spi: S,
     config: Arducam5MPConfig,
 }
 
